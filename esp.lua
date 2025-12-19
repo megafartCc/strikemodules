@@ -42,6 +42,45 @@ local hasDrawing = (typeof(Drawing) == "table" or typeof(Drawing) == "userdata")
 local hasTaskCancel = (type(task) == "table" or type(task) == "userdata")
     and type(task.cancel) == "function"
 
+local TEAM_COLOR_MAP = {
+    ["Terrorists"] = Color3.fromRGB(255, 85, 85),
+    ["Counter-Terrorists"] = Color3.fromRGB(85, 170, 255),
+}
+
+local function getTeamName(plr)
+    if not plr then
+        return nil
+    end
+    local attr = plr:GetAttribute("Team")
+    if attr and attr ~= "" then
+        return attr
+    end
+    local teamObj = plr.Team
+    if teamObj and teamObj.Name ~= "" then
+        return teamObj.Name
+    end
+    return nil
+end
+
+local function isSameTeam(plr)
+    local myTeam = getTeamName(player)
+    local theirTeam = getTeamName(plr)
+    if not myTeam or not theirTeam then
+        return false
+    end
+    if myTeam == "Spectators" or theirTeam == "Spectators" then
+        return false
+    end
+    return myTeam == theirTeam
+end
+
+local function resolveTeamColor(teamObj, teamName)
+    if teamObj and teamObj.TeamColor then
+        return teamObj.TeamColor.Color
+    end
+    return TEAM_COLOR_MAP[teamName]
+end
+
 local autoDigEnabled = false
 local autoDigThread = nil
 local autoDigManualEnabled = false
@@ -244,6 +283,7 @@ local function ESP(plr)
     local hotbarViewport = nil
     local hotbarCam = nil
     local lastToolName = nil
+    local hotbarGuiName = "HotbarBillboard_" .. plr.Name
 
     local function ensureHotbarGui(anchorPart)
         if hotbarGui and hotbarGui.Parent == nil then
@@ -252,18 +292,19 @@ local function ESP(plr)
         if hotbarGui then
             return
         end
-        local BillboardGui = game:GetService("CoreGui"):FindFirstChild("Eps_HotbarBillboard_" .. plr.Name)
+        local hudRoot = getHudRoot()
+        local BillboardGui = hudRoot:FindFirstChild(hotbarGuiName)
         if BillboardGui then
             hotbarGui = BillboardGui
         else
             hotbarGui = Instance.new("BillboardGui")
-            hotbarGui.Name = "HotbarBillboard_" .. plr.Name
+            hotbarGui.Name = hotbarGuiName
             hotbarGui.AlwaysOnTop = true
             hotbarGui.Size = UDim2.fromOffset(64, 64)
             hotbarGui.StudsOffset = Vector3.new(0, -3.8, 0)
             hotbarGui.MaxDistance = 500
             hotbarGui.Adornee = anchorPart
-            hotbarGui.Parent = getHudRoot()
+            hotbarGui.Parent = hudRoot
         end
 
         hotbarFrame = hotbarGui:FindFirstChild("HotbarFrame")
@@ -382,6 +423,16 @@ local function ESP(plr)
                     and plr.Character.Humanoid.Health > 0
                     and plr.Character:FindFirstChild("Head") ~= nil
                 then
+                    local gamemode = workspace:GetAttribute("Gamemode")
+                    if teamCheckEnabled and gamemode ~= "Deathmatch" and isSameTeam(plr) then
+                        for _, drawing in pairs(library) do
+                            if drawing and drawing.Visible then
+                                drawing.Visible = false
+                            end
+                        end
+                        destroyHotbarGui()
+                        return
+                    end
                     local humanoid = plr.Character.Humanoid
                     local hrp = plr.Character.HumanoidRootPart
                     local shakeOffset = humanoid.CameraOffset
@@ -545,10 +596,9 @@ local function ESP(plr)
 
                         local teamLabel = nil
                         local teamObj = plr.Team
-                        if teamCheckEnabled and teamObj and teamObj.Name and teamObj.Name ~= "" then
-                            teamLabel = teamObj.Name
-                        elseif teamCheckEnabled and plr.TeamColor then
-                            teamLabel = tostring(plr.TeamColor)
+                        local teamName = getTeamName(plr)
+                        if teamCheckEnabled and teamName then
+                            teamLabel = teamName
                         end
                         
                         if teamLabel and teamCheckEnabled then
@@ -559,7 +609,7 @@ local function ESP(plr)
                                     tt.Center = false
                                     tt.Outline = true
                                     tt.Size = teamSize
-                                    tt.Color = (teamColorEnabled and teamObj and teamObj.TeamColor.Color) or Color3.fromRGB(255, 255, 255)
+                                    tt.Color = (teamColorEnabled and (resolveTeamColor(teamObj, teamName) or Color3.fromRGB(255, 255, 255))) or Color3.fromRGB(255, 255, 255)
                                     library.teamtext = tt
                                 end
                             end
@@ -571,7 +621,7 @@ local function ESP(plr)
                                     center_x + half_width + 4,
                                     yTop + math.max(2, math.floor(teamSize * 0.3))
                                 )
-                                tt.Color = (teamColorEnabled and teamObj and teamObj.TeamColor.Color) or Color3.fromRGB(255, 255, 255)
+                                tt.Color = (teamColorEnabled and (resolveTeamColor(teamObj, teamName) or Color3.fromRGB(255, 255, 255))) or Color3.fromRGB(255, 255, 255)
                                 tt.Visible = true
                             end
                         elseif library.teamtext then
@@ -934,9 +984,20 @@ end
 function PlayerESP:SetHotbarDisplay(list)
     local set = {}
     if type(list) == "table" then
-        for _, name in ipairs(list) do
-            set[tostring(name)] = true
+        if #list > 0 then
+            for _, name in ipairs(list) do
+                set[tostring(name)] = true
+            end
+        else
+            for name, flag in pairs(list) do
+                if flag then
+                    set[tostring(name)] = true
+                end
+            end
         end
+    end
+    if next(set) == nil then
+        set.Text = true
     end
     hotbarDisplaySet = set
 end
