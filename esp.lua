@@ -776,21 +776,11 @@ local function DrawSkeletonESP(plr)
         if not limbs then
             return
         end
-        for _, v in pairs(limbs) do
-            v.Visible = state and skeletonEspEnabled or false
-        end
-    end
-
-    local function anyVisible()
-        if not limbs then
-            return false
-        end
-        for _, v in pairs(limbs) do
-            if v.Visible then
-                return true
+        if not state then
+            for _, v in pairs(limbs) do
+                v.Visible = false
             end
         end
-        return false
     end
 
     local function viewport(pos)
@@ -822,6 +812,7 @@ local function DrawSkeletonESP(plr)
         end
         line.From = from2d
         line.To = to2d
+        line.Visible = skeletonEspEnabled
         return true
     end
 
@@ -928,14 +919,8 @@ local function DrawSkeletonESP(plr)
             visible = UpdateR6Skeleton(char)
         end
 
-        if visible then
-            if not anyVisible() then
-                SetVisible(true)
-            end
-        else
-            if anyVisible() then
-                SetVisible(false)
-            end
+        if not visible then
+            SetVisible(false)
         end
 
         if not Players:FindFirstChild(plr.Name) then
