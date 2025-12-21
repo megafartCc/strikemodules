@@ -206,6 +206,14 @@ local function safeDisconnectConn(conn)
     end
 end
 
+local function getCamera()
+    local current = workspace.CurrentCamera
+    if current then
+        camera = current
+    end
+    return camera
+end
+
 local function NewQuad(thickness, color)
     if hasDrawing then
         local quad = Drawing.new("Quad")
@@ -704,30 +712,44 @@ local function DrawSkeletonESP(plr)
 
     repeat task.wait() until plr.Character ~= nil and plr.Character:FindFirstChildOfClass("Humanoid") ~= nil
 
-    local char = plr.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local isR15 = hum and hum.RigType == Enum.HumanoidRigType.R15
-
+    local currentRigType = nil
+    local currentCharacter = nil
     local limbs
-    if isR15 then
-        limbs = {
-            Head_UpperTorso = DrawLine(),
-            UpperTorso_LowerTorso = DrawLine(),
-            UpperTorso_LeftUpperArm = DrawLine(),
-            LeftUpperArm_LeftLowerArm = DrawLine(),
-            LeftLowerArm_LeftHand = DrawLine(),
-            UpperTorso_RightUpperArm = DrawLine(),
-            RightUpperArm_RightLowerArm = DrawLine(),
-            RightLowerArm_RightHand = DrawLine(),
-            LowerTorso_LeftUpperLeg = DrawLine(),
-            LeftUpperLeg_LeftLowerLeg = DrawLine(),
-            LeftLowerLeg_LeftFoot = DrawLine(),
-            LowerTorso_RightUpperLeg = DrawLine(),
-            RightUpperLeg_RightLowerLeg = DrawLine(),
-            RightLowerLeg_RightFoot = DrawLine(),
-        }
-    else
-        limbs = {
+
+    local function cleanupLimbs()
+        if not limbs then
+            return
+        end
+        for _, line in pairs(limbs) do
+            pcall(function()
+                if line and line.Remove then
+                    line:Remove()
+                end
+            end)
+        end
+        limbs = nil
+    end
+
+    local function createLimbs(isR15)
+        if isR15 then
+            return {
+                Head_UpperTorso = DrawLine(),
+                UpperTorso_LowerTorso = DrawLine(),
+                UpperTorso_LeftUpperArm = DrawLine(),
+                LeftUpperArm_LeftLowerArm = DrawLine(),
+                LeftLowerArm_LeftHand = DrawLine(),
+                UpperTorso_RightUpperArm = DrawLine(),
+                RightUpperArm_RightLowerArm = DrawLine(),
+                RightLowerArm_RightHand = DrawLine(),
+                LowerTorso_LeftUpperLeg = DrawLine(),
+                LeftUpperLeg_LeftLowerLeg = DrawLine(),
+                LeftLowerLeg_LeftFoot = DrawLine(),
+                LowerTorso_RightUpperLeg = DrawLine(),
+                RightUpperLeg_RightLowerLeg = DrawLine(),
+                RightLowerLeg_RightFoot = DrawLine(),
+            }
+        end
+        return {
             Head_Torso = DrawLine(),
             Torso_LeftArm = DrawLine(),
             Torso_RightArm = DrawLine(),
@@ -736,19 +758,33 @@ local function DrawSkeletonESP(plr)
         }
     end
 
-    local sampleLimb
-    for _, line in pairs(limbs) do
-        sampleLimb = line
-        break
+    local function ensureLimbs(char, hum)
+        if not (char and hum) then
+            return
+        end
+        local rigType = hum.RigType
+        if currentCharacter ~= char or currentRigType ~= rigType or not limbs then
+            cleanupLimbs()
+            limbs = createLimbs(rigType == Enum.HumanoidRigType.R15)
+            currentCharacter = char
+            currentRigType = rigType
+            data.SkeletonLimbs = limbs
+        end
     end
 
     local function SetVisible(state)
+        if not limbs then
+            return
+        end
         for _, v in pairs(limbs) do
             v.Visible = state and skeletonEspEnabled or false
         end
     end
 
     local function anyVisible()
+        if not limbs then
+            return false
+        end
         for _, v in pairs(limbs) do
             if v.Visible then
                 return true
@@ -758,11 +794,18 @@ local function DrawSkeletonESP(plr)
     end
 
     local function viewport(pos)
-        local res, onScreen = camera:WorldToViewportPoint(pos)
+        local cam = getCamera()
+        if not cam then
+            return Vector2.new(0, 0), false
+        end
+        local res, onScreen = cam:WorldToViewportPoint(pos)
         return Vector2.new(res.X, res.Y), onScreen
     end
 
     local function setLine(key, partA, partB)
+        if not limbs then
+            return false
+        end
         local line = limbs[key]
         if not line then
             return false
@@ -860,14 +903,21 @@ local function DrawSkeletonESP(plr)
             return
         end
 
-        if not camera then
-            camera = workspace.CurrentCamera
-        end
-
         local char = plr.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if not char or not hum or hum.Health <= 0 then
             SetVisible(false)
+            return
+        end
+
+        local gamemode = workspace:GetAttribute("Gamemode")
+        if teamCheckEnabled and gamemode ~= "Deathmatch" and isSameTeam(plr) then
+            SetVisible(false)
+            return
+        end
+
+        ensureLimbs(char, hum)
+        if not limbs then
             return
         end
 
