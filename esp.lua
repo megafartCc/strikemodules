@@ -3,6 +3,7 @@ local RunService = game:GetService("RunService")
 local camera = game:GetService("Workspace").CurrentCamera
 local player = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 
 local THEME = {
     panel = Color3.fromRGB(16, 18, 24),
@@ -22,7 +23,7 @@ local BlissfulSettings = {
     Tracer_Origin = "Bottom",
     Tracer_FollowMouse = false,
 }
-local hotbarDisplaySet = {}
+local hotbarDisplaySet = { Text = true }
 
 local boxEspEnabled = false
 local healthEspEnabled = false
@@ -79,6 +80,23 @@ local function resolveTeamColor(teamObj, teamName)
         return teamObj.TeamColor.Color
     end
     return TEAM_COLOR_MAP[teamName]
+end
+
+local function decodeEquippedName(rawValue)
+    if type(rawValue) == "table" and rawValue.Name then
+        return tostring(rawValue.Name)
+    end
+    if type(rawValue) ~= "string" or rawValue == "" then
+        return nil
+    end
+    local ok, data = pcall(HttpService.JSONDecode, HttpService, rawValue)
+    if not ok or type(data) ~= "table" then
+        return nil
+    end
+    if data.Name then
+        return tostring(data.Name)
+    end
+    return nil
 end
 
 local autoDigEnabled = false
@@ -560,8 +578,21 @@ local function ESP(plr)
                         pcall(function()
                             tool = plr.Character:FindFirstChildOfClass("Tool")
                         end)
-                        
-                        if hotbarEspEnabled and hotbarDisplaySet.Text then
+
+                        local weaponLabel = nil
+                        if tool and tool.Name and tool.Name ~= "" then
+                            weaponLabel = tool.Name
+                        else
+                            local rawEquipped = plr:GetAttribute("CurrentEquipped")
+                            if rawEquipped ~= data.lastEquippedRaw then
+                                data.lastEquippedRaw = rawEquipped
+                                data.lastEquippedName = decodeEquippedName(rawEquipped)
+                            end
+                            weaponLabel = data.lastEquippedName
+                        end
+                        weaponLabel = weaponLabel or ""
+
+                        if hotbarEspEnabled then
                             if not library.hotbartext then
                                 if hasDrawing then
                                     local ht = Drawing.new("Text")
@@ -576,12 +607,11 @@ local function ESP(plr)
                             if library.hotbartext then
                                 local ht = library.hotbartext
                                 ht.Size = hotbarSize
-                                local label = (tool and tool.Name) or ""
-                                ht.Text = label
+                                ht.Text = weaponLabel
                                 local yBottom = center_y + half_height
                                 local y = yBottom + math.max(1, margin - math.floor(hotbarSize * 0.35))
                                 ht.Position = Vector2.new(center_x, y)
-                                ht.Visible = (label ~= "")
+                                ht.Visible = (weaponLabel ~= "")
                             end
                         elseif library.hotbartext then
                             library.hotbartext.Visible = false
